@@ -1,3 +1,110 @@
+# Guia Rapido para Rodar o Projeto (Branch `teste`)
+
+Este arquivo explica o passo a passo para baixar, configurar e executar o projeto localmente com Docker.
+
+## 1) Clonar o repositorio
+
+```bash
+git clone https://github.com/Hissa-Barbara/G4_CONSULTA_DOCUMENTOS.git
+cd G4_CONSULTA_DOCUMENTOS
+```
+
+## 2) Ir para a branch de teste
+
+```bash
+git fetch origin
+git switch teste
+```
+
+Se a branch local ainda nao existir:
+
+```bash
+git switch -c teste --track origin/teste
+```
+
+## 3) Criar e configurar o arquivo `.env`
+
+Copie o arquivo de exemplo:
+
+```bash
+cp .env.example .env
+```
+
+No Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Depois, edite o `.env` e preencha os campos necessarios.
+
+### Campos importantes
+
+- `GROQ_API_KEY`: sua chave da Groq
+- `GROQ_MODEL`: modelo a usar (exemplo: `qwen/qwen3-32b`)
+- `LLM_PROVIDER`: `groq` para usar Groq primeiro
+- `PINECONE_API_KEY`: chave da Pinecone
+- `PINECONE_INDEX_NAME`: nome do indice
+- `PINECONE_HOST`: host do indice
+- `SECRET_KEY`: chave JWT da aplicacao
+- `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET`: se for usar login Google
+
+Observacao: os valores de banco no `.env.example` ja estao prontos para o Docker Compose local.
+
+## 4) Subir os containers
+
+```bash
+docker compose up -d --build
+```
+
+## 5) Verificar se subiu tudo
+
+```bash
+docker compose ps
+```
+
+Esperado:
+- `backend` em `Up`
+- `frontend` em `Up`
+- `db` em `Up (healthy)`
+
+## 6) Acessar o sistema
+
+- Frontend: http://localhost:10000
+- Backend (Swagger): http://localhost:8000/docs
+
+## 7) Ver logs se algo falhar
+
+```bash
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f db
+```
+
+## 8) Atualizar codigo depois
+
+Quando houver novas alteracoes no GitHub:
+
+```bash
+git switch teste
+git pull
+docker compose up -d --build
+```
+
+## 9) Boas praticas
+
+- Nunca subir `.env` para o repositorio.
+- Rotacionar chaves se alguma credencial for exposta.
+- Fazer commit somente do que e codigo/config segura.
+
+-----------------
+
+
+
+
+
+
+
 # Sistema Inteligente de Consultas via LLM - UFMA
 
 Um sistema de consultas inteligente baseado em LLM (Large Language Model) desenvolvido para facilitar o acesso às informações da RESOLUÇÃO Nº 1892-CONSEPE de 28 de junho de 2019, que aprova as Normas Regulamentadoras dos Cursos de Graduação da Universidade Federal do Maranhão.
