@@ -26,6 +26,18 @@ const LoginView = ({
   const [loginMode, setLoginMode] = useState('traditional'); // 'traditional' ou 'register'
 
   // === FUNÇÕES DE VALIDAÇÃO ===
+  // Faz parse seguro de resposta para evitar erro quando backend retorna corpo vazio.
+  const parseResponseData = async (response) => {
+    const rawText = await response.text();
+    if (!rawText) return {};
+
+    try {
+      return JSON.parse(rawText);
+    } catch {
+      return { detail: rawText };
+    }
+  };
+
   // Valida formato de email usando regex
   const validateEmail = (email) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -89,7 +101,7 @@ const LoginView = ({
 
     setIsLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/login`, {
+      const response = await fetch(`${API_BASE_URL}/api/login/`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/x-www-form-urlencoded' 
@@ -100,7 +112,7 @@ const LoginView = ({
         }).toString(),
       });
       
-      const data = await response.json();
+      const data = await parseResponseData(response);
       
       if (response.ok) {
         // Sucesso - chama callback do App.js para atualizar estado global
@@ -139,7 +151,7 @@ const LoginView = ({
         }),
       });
       
-      const data = await response.json();
+      const data = await parseResponseData(response);
       
       if (response.ok) {
         // Sucesso - mostra mensagem e redireciona para login
@@ -189,7 +201,7 @@ const LoginView = ({
         body: JSON.stringify(userData),
       });
       
-      const data = await response.json();
+      const data = await parseResponseData(response);
       
       if (response.ok) {
         // Sucesso - chama callback do App.js

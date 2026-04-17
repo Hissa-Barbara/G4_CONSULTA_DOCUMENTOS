@@ -4,7 +4,6 @@
 
 from fastapi import APIRouter, Body, HTTPException, Depends
 from pydantic import BaseModel
-from groq import Groq # Cliente para interagir com a API Groq
 from dotenv import load_dotenv
 import os
 import logging
@@ -12,16 +11,13 @@ import logging
 # Importa as funções auxiliares necessárias para o pipeline RAG (Retrieval-Augmented Generation):
 #   - generate_embedding: Para converter texto em vetores numéricos.
 #   - get_pinecone_index: Para acessar a instância do índice Pinecone.
-from routes.utils import generate_embedding, get_pinecone_index
+from routes.utils import generate_embedding, get_pinecone_index, generate_llm_response
 
 # Importa autenticação e função para salvar histórico
 from routes.login import get_current_active_user
 
 # Carrega as variáveis de ambiente definidas no arquivo .env do projeto.
 load_dotenv()
-
-# Inicializa o cliente Groq. A chave da API é carregada de forma segura das variáveis de ambiente.
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # Configura o logger específico para este módulo para facilitar o rastreamento de eventos e erros.
 logger = logging.getLogger(__name__)
@@ -84,7 +80,7 @@ async def send_message(
         #  Busca com filtro opcional por documento
         query_params = {
             "vector": question_embedding,
-            "top_k": 15,
+            "top_k": 10,
             "include_metadata": True
         }
         
@@ -123,7 +119,7 @@ async def send_message(
             
             expanded_query_params = {
                 "vector": question_embedding,
-                "top_k": 25,
+                "top_k": 15,
                 "include_metadata": True
             }
             
@@ -148,7 +144,13 @@ async def send_message(
                     })
         
         # Concatena todos os conteúdos dos chunks relevantes para formar o contexto completo para o LLM.
-        context = "\n\n".join(context_parts) 
+        context = "\n\n".join(context_parts)
+
+        # Evita payload grande para a Groq (limite de TPM na conta on_demand)
+        max_context_chars = int(os.getenv("GROQ_MAX_CONTEXT_CHARS", "8000"))
+        if len(context) > max_context_chars:
+            logger.info(f"Contexto truncado de {len(context)} para {max_context_chars} caracteres")
+            context = context[:max_context_chars]
 
         # Log detalhado para monitoramento e debug da qualidade da busca
         logger.info(f"Pergunta recebida: {question}")
@@ -180,20 +182,23 @@ Instruções:
 - Sempre tente ser útil, mesmo com informações incompletas
 - Cite especificamente quais documentos você está consultando
 {f"- Foque sua resposta nas informações{document_context}" if document_context else ""}
+- Formatação obrigatória da resposta:
+    1) Não use títulos Markdown (ex.: ###), tabelas, linhas --- ou emojis.
+    2) Responda em texto corrido com, no máximo, 6 bullets simples quando necessário.
+    3) Evite repetir o mesmo conteúdo e seja objetivo.
+    4) Finalize com "Fontes:" seguido apenas dos nomes dos arquivos usados.
 
 Resposta detalhada:"""
         
         # Etapa 4: Geração da resposta utilizando o modelo de linguagem da Groq.
         try:
-            response = client.chat.completions.create(
-                model="llama3-8b-8192", # Especifica o modelo LLM a ser utilizado.
-                messages=[{"role": "user", "content": prompt}], # O prompt é passado como uma mensagem do usuário.
-                max_tokens=2000, # Define o limite máximo de tokens para respostas mais completas.
-                temperature=0.05, # Temperatura muito baixa para máxima precisão e consistência.
-                top_p=0.95 # Controle adicional da diversidade de resposta
+            answer = generate_llm_response(
+                prompt=prompt,
+                max_tokens=900,
+                temperature=0.05,
+                top_p=0.95,
             )
-            
-            answer = response.choices[0].message.content # Extrai o texto da resposta do LLM.
+
             logger.info(f"Resposta gerada: {answer[:100]}...")
             
         except Exception as e:

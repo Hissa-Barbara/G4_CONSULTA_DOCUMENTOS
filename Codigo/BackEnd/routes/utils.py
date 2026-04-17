@@ -4,9 +4,12 @@
 
 import os
 import logging
+import re
+import requests
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone, Index, PodSpec, ServerlessSpec
+from groq import Groq
 import time 
 
 # Configuração do logger para monitoramento e depuração
@@ -17,6 +20,172 @@ load_dotenv()
 
 # Armazenamento em memória para documentos processados
 document_store = []
+
+
+def _sanitize_model_output(text: str) -> str:
+    """Remove blocos de raciocínio interno (ex.: <think>...</think>) da resposta final."""
+    if not text:
+        return ""
+
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = cleaned.replace("<think>", "").replace("</think>", "")
+    return cleaned.strip()
+
+# --- Configuração de LLM (Groq com fallback para Ollama) ---
+groq_client = None
+groq_api_key = os.getenv("GROQ_API_KEY")
+if groq_api_key:
+    try:
+        groq_client = Groq(api_key=groq_api_key)
+        logger.info("Cliente Groq inicializado para geração de respostas.")
+    except Exception as e:
+        logger.warning(f"Falha ao inicializar cliente Groq: {e}")
+
+
+def _generate_with_ollama(prompt: str, max_tokens: int, temperature: float, top_p: float | None = None) -> str:
+    """Gera resposta via servidor local (Ollama nativo ou API compatível OpenAI)."""
+    base_url = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434").rstrip("/")
+    ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:latest")
+    ollama_max_tokens = int(os.getenv("OLLAMA_MAX_TOKENS", "512"))
+    request_timeout = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "90"))
+    local_max_tokens = min(max_tokens, ollama_max_tokens)
+
+    errors = []
+
+    # 1) Ollama nativo: /api/generate
+    try:
+        generate_payload = {
+            "model": ollama_model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": local_max_tokens,
+            },
+        }
+        if top_p is not None:
+            generate_payload["options"]["top_p"] = top_p
+
+        response = requests.post(f"{base_url}/api/generate", json=generate_payload, timeout=request_timeout)
+        if response.status_code < 400:
+            data = response.json()
+            text = (data.get("response") or "").strip()
+            if text:
+                return _sanitize_model_output(text)
+            errors.append("/api/generate retornou resposta vazia")
+        else:
+            errors.append(f"/api/generate status {response.status_code}: {response.text[:180]}")
+    except Exception as e:
+        errors.append(f"/api/generate erro: {e}")
+
+    # 2) Ollama chat API: /api/chat
+    try:
+        chat_payload = {
+            "model": ollama_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": local_max_tokens,
+            },
+        }
+        if top_p is not None:
+            chat_payload["options"]["top_p"] = top_p
+
+        response = requests.post(f"{base_url}/api/chat", json=chat_payload, timeout=request_timeout)
+        if response.status_code < 400:
+            data = response.json()
+            msg = data.get("message", {}) if isinstance(data, dict) else {}
+            text = (msg.get("content") or "").strip()
+            if text:
+                return _sanitize_model_output(text)
+            errors.append("/api/chat retornou resposta vazia")
+        else:
+            errors.append(f"/api/chat status {response.status_code}: {response.text[:180]}")
+    except Exception as e:
+        errors.append(f"/api/chat erro: {e}")
+
+    # 3) Compatível OpenAI: /v1/chat/completions
+    try:
+        openai_payload = {
+            "model": ollama_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "max_tokens": local_max_tokens,
+        }
+        if top_p is not None:
+            openai_payload["top_p"] = top_p
+
+        response = requests.post(f"{base_url}/v1/chat/completions", json=openai_payload, timeout=request_timeout)
+        if response.status_code < 400:
+            data = response.json()
+            choices = data.get("choices", []) if isinstance(data, dict) else []
+            text = ""
+            if choices:
+                message = choices[0].get("message", {})
+                text = (message.get("content") or "").strip()
+            if text:
+                return _sanitize_model_output(text)
+            errors.append("/v1/chat/completions retornou resposta vazia")
+        else:
+            errors.append(f"/v1/chat/completions status {response.status_code}: {response.text[:180]}")
+    except Exception as e:
+        errors.append(f"/v1/chat/completions erro: {e}")
+
+    raise RuntimeError("Falha no fallback local (Ollama/API compatível): " + " | ".join(errors))
+
+
+def _should_fallback_to_ollama(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    fallback_markers = [
+        "model_decommissioned",
+        "decommissioned",
+        "rate_limit_exceeded",
+        "request too large",
+        "tokens per minute",
+        "requested",
+    ]
+    return any(marker in msg for marker in fallback_markers)
+
+
+def generate_llm_response(prompt: str, max_tokens: int, temperature: float, top_p: float | None = None) -> str:
+    """
+    Gera resposta de LLM com priorização em Groq e fallback para Ollama local.
+
+    Configurações por ambiente:
+    - GROQ_MODEL (default: qwen/qwen3-32b)
+    - OLLAMA_URL (default: http://host.docker.internal:11434)
+    - OLLAMA_MODEL (default: qwen2.5:latest)
+    - LLM_PROVIDER (groq|ollama, default: groq)
+    """
+    provider = os.getenv("LLM_PROVIDER", "groq").lower()
+    groq_model = os.getenv("GROQ_MODEL", "qwen/qwen3-32b")
+
+    if provider == "ollama":
+        return _generate_with_ollama(prompt, max_tokens=max_tokens, temperature=temperature, top_p=top_p)
+
+    if groq_client is None:
+        logger.warning("Groq indisponível (sem chave ou inicialização). Usando Ollama.")
+        return _generate_with_ollama(prompt, max_tokens=max_tokens, temperature=temperature, top_p=top_p)
+
+    try:
+        response = groq_client.chat.completions.create(
+            model=groq_model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p if top_p is not None else 1,
+        )
+        text = response.choices[0].message.content
+        if not text:
+            raise RuntimeError("Groq retornou resposta vazia")
+        return _sanitize_model_output(text)
+    except Exception as groq_error:
+        if _should_fallback_to_ollama(groq_error):
+            logger.warning(f"Falha no Groq ({groq_model}). Tentando Ollama fallback: {groq_error}")
+            return _generate_with_ollama(prompt, max_tokens=max_tokens, temperature=temperature, top_p=top_p)
+
+        raise
 
 # --- Configuração do Modelo de Embeddings ---
 # O modelo de embedding é inicializado uma única vez na carga do módulo para eficiência.

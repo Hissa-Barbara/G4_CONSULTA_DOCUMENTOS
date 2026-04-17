@@ -1,0 +1,12 @@
+Codigo/**/__pycache__/
+Codigo/**/*.pyc
+Codigo/**/*.pyo
+Codigo/**/.env
+Codigo/**/venv/
+Codigo/**/.venv/
+Codigo/**/node_modules/
+Codigo/**/build/
+Codigo/**/docs/
+Codigo/**/metadata_backups/
+Codigo/**/uploads/
+.git/

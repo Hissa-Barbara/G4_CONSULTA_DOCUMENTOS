@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from pypdf import PdfReader
 
 # Imports do sistema RAG
-from routes.utils import generate_embedding, get_pinecone_index
+from routes.utils import generate_embedding, get_pinecone_index, generate_llm_response
 
 # LangChain para chunking inteligente
 try:
@@ -19,9 +19,6 @@ try:
 except ImportError:
     LANGCHAIN_AVAILABLE = False
     logging.warning("LangChain não disponível, usando chunking manual")
-
-# Import do Groq para gerar resumos
-from groq import Groq
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +30,6 @@ class HybridDocumentProcessor:
         self.chunk_size = 2500      # Tamanho para manter contexto
         self.chunk_overlap = 600    # Overlap para excelente continuidade
         self.batch_size = 32        # Processamento em lotes grandes
-        
-        # Cliente Groq para resumos
-        self.groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
         
     def extract_text_from_pdf(self, file_path: str) -> str:
         """Extração de texto do PDF"""
@@ -70,10 +64,6 @@ class HybridDocumentProcessor:
     def generate_document_summary(self, text: str, filename: str) -> str:
         """Gera um resumo do documento usando Groq LLM com fallback robusto"""
         try:
-            # Verifica se o cliente Groq está disponível
-            if not self.groq_client:
-                return self._generate_fallback_summary(text, filename)
-            
             # Pega primeiros caracteres para o resumo
             text_for_summary = text[:8000] if len(text) > 8000 else text
             
@@ -92,14 +82,11 @@ Crie um resumo de 3-4 parágrafos que inclua:
 
 Mantenha o resumo claro, objetivo e útil para quem precisa consultar este documento."""
 
-            response = self.groq_client.chat.completions.create(
-                model="llama3-8b-8192",
-                messages=[{"role": "user", "content": prompt}],
+            summary = generate_llm_response(
+                prompt=prompt,
                 max_tokens=800,
-                temperature=0.3
+                temperature=0.3,
             )
-            
-            summary = response.choices[0].message.content
             
             # Validação do resumo gerado
             if not summary or len(summary.strip()) < 50:
