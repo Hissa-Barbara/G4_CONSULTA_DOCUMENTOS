@@ -531,53 +531,20 @@
   text-align: center;
 }
 
-/* ========== FONTES CONSULTADAS ========== */
-.message-sources {
+/* ========== RODAPÉ DA FONTE ========== */
+.message-source-footer {
   margin-top: 10px;
-  padding-top: 8px;
+  padding-top: 7px;
   border-top: 1px solid #e5e7eb;
-  font-size: 0.85em;
   color: #6b7280;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
-.message-sources h4 {
-  font-size: 0.95em;
-  margin-bottom: 6px;
-  color: #374151;
+.message-source-footer span {
   font-weight: 600;
-}
-
-.message-sources ul {
-  list-style: none;
-  padding-left: 0;
-  margin-bottom: 0;
-}
-
-.source-item {
-  display: flex;
-  align-items: flex-start;
-  margin-bottom: 4px;
-  line-height: 1.4;
-}
-
-.source-icon {
-  margin-right: 6px;
-  color: #2563eb;
-  flex-shrink: 0;
-  padding-top: 2px;
-}
-
-.source-filename {
-  font-weight: bold;
-  color: #1f2937;
-  word-break: break-word;
-}
-
-.source-content-snippet {
-  color: #6b7280;
-  margin-left: 5px;
-  font-style: italic;
-  word-break: break-word;
+  color: #4b5563;
 }
 
 /* ========== RESPONSIVE DESIGN ========== */

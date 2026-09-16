@@ -38,3 +38,6 @@ Thumbs.db
 dist/
 build/
 *.egg-info/
+*_debug.txt
+consultai_*.tar.gz
+BackEnd/uploads/

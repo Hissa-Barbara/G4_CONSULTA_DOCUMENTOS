@@ -153,13 +153,13 @@ def generate_llm_response(prompt: str, max_tokens: int, temperature: float, top_
     Gera resposta de LLM com priorização em Groq e fallback para Ollama local.
 
     Configurações por ambiente:
-    - GROQ_MODEL (default: qwen/qwen3-32b)
+    - GROQ_MODEL (default: qwen/qwen3.8-27b)
     - OLLAMA_URL (default: http://host.docker.internal:11434)
     - OLLAMA_MODEL (default: qwen2.5:latest)
     - LLM_PROVIDER (groq|ollama, default: groq)
     """
     provider = os.getenv("LLM_PROVIDER", "groq").lower()
-    groq_model = os.getenv("GROQ_MODEL", "qwen/qwen3-32b")
+    groq_model = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 
     if provider == "ollama":
         return _generate_with_ollama(prompt, max_tokens=max_tokens, temperature=temperature, top_p=top_p)

@@ -119,11 +119,13 @@ const AdminView = ({
   // Função para selecionar arquivo no input file
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
-    // Valida se o arquivo é PDF
-    if (file && file.type === 'application/pdf') {
+    const allowedExtensions = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'tif', 'tiff'];
+    const extension = file?.name.split('.').pop()?.toLowerCase();
+
+    if (file && allowedExtensions.includes(extension)) {
       setNewDocument(prev => ({ ...prev, file }));
     } else {
-      alert('Por favor, selecione apenas arquivos PDF.');
+      alert('Selecione um arquivo PDF, PNG, JPG, JPEG, WEBP, TIF ou TIFF.');
     }
   };
 
@@ -459,10 +461,10 @@ const AdminView = ({
               
               {/* Input para seleção de arquivo */}
               <div className="form-group">
-                <label className="form-label">Arquivo PDF *</label>
+                <label className="form-label">Documento ou imagem *</label>
                 <input
                   type="file"
-                  accept=".pdf"
+                  accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff"
                   onChange={handleFileSelect}
                   className="file-input"
                   required
