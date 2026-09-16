@@ -10,8 +10,7 @@ import {
   ThumbsDown,
   AlertTriangle,
   Copy,
-  FileText,
-  Clock
+  FileText
 } from 'lucide-react';
 import './ChatView.css';
 import AdminRequestButton from '../AdminRequestButton/AdminRequestButton';
@@ -46,6 +45,9 @@ const ChatView = ({
   
   // Estado para controlar se o seletor de documentos está visível
   const [showDocumentSelector, setShowDocumentSelector] = useState(false);
+
+  const getDisplayFilename = (filename = 'Documento') =>
+    filename.replace(/^\d{8}_[a-f0-9]{8}_/i, '');
 
   // Função wrapper para gerenciar feedback com estado visual local
   const handleFeedbackWithState = (messageId, feedbackType) => {
@@ -94,6 +96,11 @@ const ChatView = ({
 
     setChatMessages((prevMessages) => [...prevMessages, newUserMessage]);
 
+    const conversationHistory = chatMessages.slice(-6).map(message => ({
+      role: message.sender === 'user' ? 'user' : 'assistant',
+      content: message.text
+    }));
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_BASE_URL}/api/chat`, {
@@ -104,7 +111,8 @@ const ChatView = ({
         },
         body: JSON.stringify({ 
           question: questionToSend,
-          selected_document: selectedDocument
+          selected_document: selectedDocument,
+          conversation_history: conversationHistory
         }),
       });
 
@@ -119,8 +127,6 @@ const ChatView = ({
       }
 
       const data = await response.json();
-      console.log("Resposta da API de chat:", data);
-
       // Cria mensagem de resposta do bot
       const botMessage = {
         id: chatMessages.length + 2,
@@ -145,7 +151,7 @@ const ChatView = ({
         ...prevMessages,
         {
           id: prevMessages.length + 2,
-          text: `Desculpe, não consegui obter uma resposta. Por favor, tente novamente. (Erro: ${error.message})`,
+          text: 'Não foi possível obter uma resposta agora. Tente novamente em alguns instantes.',
           sender: 'bot',
           timestamp: new Date().toLocaleTimeString(),
           isError: true,
@@ -293,21 +299,11 @@ const ChatView = ({
 
                 {/* Seção de fontes consultadas para respostas do bot */}
                 {message.sender === 'bot' && message.sources && message.sources.length > 0 && (
-                  <div className="message-sources">
-                    <h4>Fontes Consultadas:</h4>
-                    <ul>
-                      {message.sources.map((source, index) => (
-                        <li key={index} className="source-item">
-                          <FileText size={14} className="source-icon" />
-                          <strong className="source-filename">{source.filename}</strong>
-                          {source.content && (
-                            <span className="source-content-snippet">
-                              : "{source.content.substring(0, 150)}..."
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
+                  <div className="message-source-footer">
+                    <span>{message.sources.length === 1 ? 'Fonte: ' : 'Fontes: '}</span>
+                    {message.sources
+                      .map(source => getDisplayFilename(source.filename))
+                      .join(', ')}
                   </div>
                 )}
 

@@ -1,0 +1,70 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: ./Codigo/BackEnd
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      PINECONE_API_KEY: ${PINECONE_API_KEY}
+      PINECONE_ENVIRONMENT: ${PINECONE_ENVIRONMENT}
+      PINECONE_INDEX_NAME: ${PINECONE_INDEX_NAME}
+      PINECONE_HOST: ${PINECONE_HOST}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS}
+      SECRET_KEY: ${SECRET_KEY}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      DATABASE_URL: ${DATABASE_URL}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PORT: 8000
+      HOST: 0.0.0.0
+      ENVIRONMENT: development
+    volumes:
+      - ./Codigo/BackEnd/document_metadata.json:/app/document_metadata.json
+      - ./Codigo/BackEnd/uploads:/app/uploads
+      - ./Codigo/BackEnd/metadata_backups:/app/metadata_backups
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./Codigo/FrontEnd
+    ports:
+      - "10000:80"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+volumes:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, status
 from fastapi.responses import FileResponse, JSONResponse
 import os
+import mimetypes
 import uuid
 import json
 from datetime import datetime
@@ -8,6 +9,7 @@ from pathlib import Path
 import logging
 from dotenv import load_dotenv
 from routes.document_processor import process_and_index_pdf
+from routes.utils import get_pinecone_index
 
 # Configuração básica
 load_dotenv()
@@ -19,9 +21,27 @@ UPLOAD_DIR = "uploads"
 METADATA_FILE = "document_metadata.json"  # Arquivo para persistir metadados
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.webp', '.tif', '.tiff'}
 
 # Armazenamento em memória para metadados dos documentos (carregado do arquivo)
 documents_metadata = {}
+
+def safe_upload_path(file_id: str) -> str:
+    """Resolve um arquivo dentro de uploads e bloqueia path traversal."""
+    if not file_id or Path(file_id).name != file_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Identificador de arquivo inválido"
+        )
+
+    upload_root = Path(UPLOAD_DIR).resolve()
+    candidate = (upload_root / file_id).resolve()
+    if candidate.parent != upload_root:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Identificador de arquivo inválido"
+        )
+    return str(candidate)
 
 def load_metadata():
     """Carrega metadados do arquivo JSON"""
@@ -52,7 +72,7 @@ def sync_metadata_with_files():
     try:
         existing_files = set()
         for filename in os.listdir(UPLOAD_DIR):
-            if filename.endswith('.pdf'):
+            if Path(filename).suffix.lower() in ALLOWED_EXTENSIONS:
                 existing_files.add(filename)
                 
                 # Se arquivo existe mas não tem metadados, cria entrada básica
@@ -100,7 +120,7 @@ async def list_documents():
     documents = []
     try:
         for filename in os.listdir(UPLOAD_DIR):
-            if filename.endswith('.pdf'):
+            if Path(filename).suffix.lower() in ALLOWED_EXTENSIONS:
                 file_path = os.path.join(UPLOAD_DIR, filename)
                 stat = os.stat(file_path)
                 
@@ -135,21 +155,27 @@ async def list_documents():
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def upload_document(file: UploadFile = File(...)):
     """
-    Upload de documento PDF com processamento automático e indexação
+    Upload de PDF ou imagem com processamento automático e indexação
     """
     # Validações 
-    if not file.filename.lower().endswith('.pdf'):
+    original_filename = Path((file.filename or "").replace("\\", "/")).name
+    file_extension = Path(original_filename).suffix.lower()
+    if not original_filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Apenas arquivos PDF são aceitos"
+            detail="Nome de arquivo inválido"
+        )
+    if file_extension not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Formatos aceitos: PDF, PNG, JPG, JPEG, WEBP, TIF e TIFF"
         )
 
     file_path = None
     try:
         # Gera nome único preservando a extensão 
-        file_ext = Path(file.filename).suffix
-        file_id = f"{datetime.now().strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}_{file.filename}"
-        file_path = os.path.join(UPLOAD_DIR, file_id)
+        file_id = f"{datetime.now().strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}_{original_filename}"
+        file_path = safe_upload_path(file_id)
         
         # Salva em stream com verificação de tamanho 
         file_size = 0
@@ -165,14 +191,14 @@ async def upload_document(file: UploadFile = File(...)):
                 buffer.write(chunk)
         
         # PROCESSAMENTO AUTOMÁTICO
-        logger.info(f"Iniciando processamento automático de {file.filename}")
+        logger.info(f"Iniciando processamento automático de {original_filename}")
         try:
             processing_result = await process_and_index_pdf(file_path, file_id)
             logger.info(f"Processamento concluído: {processing_result}")
             
             # Salva metadados incluindo resumo E persiste no arquivo
             documents_metadata[file_id] = {
-                'original_name': file.filename,
+                'original_name': original_filename,
                 'summary': processing_result.get('summary', 'Resumo não disponível'),
                 'upload_date': datetime.now().isoformat(),
                 'file_size': file_size
@@ -184,19 +210,19 @@ async def upload_document(file: UploadFile = File(...)):
             # Retorna metadados completos + resultado do processamento
             return {
                 "id": file_id,
-                "original_name": file.filename,
+                "original_name": original_filename,
                 "size": file_size,
                 "upload_date": datetime.now().isoformat(),
                 "file_path": file_path,
                 "processing_result": processing_result,
                 "summary": processing_result.get('summary', 'Resumo não disponível'),
                 "status": "success",
-                "message": f"Documento '{file.filename}' carregado e indexado com sucesso!"
+                "message": f"Documento '{original_filename}' carregado e indexado com sucesso!"
             }
             
         except Exception as processing_error:
             # Se falhar no processamento, remove o arquivo e informa erro
-            logger.error(f"Erro no processamento de {file.filename}: {processing_error}")
+            logger.error(f"Erro no processamento de {original_filename}: {processing_error}")
             
             if os.path.exists(file_path):
                 os.remove(file_path)
@@ -228,7 +254,7 @@ async def upload_document(file: UploadFile = File(...)):
 async def download_document(file_id: str):
     """Endpoint para download direto de documentos"""
     try:
-        file_path = os.path.join(UPLOAD_DIR, file_id)
+        file_path = safe_upload_path(file_id)
         if not os.path.exists(file_path):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -246,11 +272,15 @@ async def download_document(file_id: str):
                 if len(parts) > 2:
                     original_filename = '_'.join(parts[2:])
         
+        media_type = mimetypes.guess_type(original_filename)[0] or 'application/octet-stream'
+
         return FileResponse(
             path=file_path,
             filename=original_filename,
-            media_type='application/pdf'
+            media_type=media_type
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Download error: {str(e)}", exc_info=True)
         raise HTTPException(
@@ -262,13 +292,23 @@ async def download_document(file_id: str):
 async def delete_document(file_id: str):
     """Remove um documento permanentemente"""
     try:
-        file_path = os.path.join(UPLOAD_DIR, file_id)
+        file_path = safe_upload_path(file_id)
         if not os.path.exists(file_path):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Documento não encontrado"
             )
             
+        # Remove primeiro os vetores; se falhar, mantém arquivo e metadados
+        # para que a operação possa ser repetida sem deixar dados órfãos.
+        pinecone_index = get_pinecone_index()
+        if pinecone_index is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Índice vetorial indisponível"
+            )
+        pinecone_index.delete(filter={"filename": {"$eq": file_id}})
+
         os.remove(file_path)
         
         # Remove metadados também e persiste a alteração
@@ -277,6 +317,8 @@ async def delete_document(file_id: str):
             save_metadata()
             
         return {"success": True, "message": "Documento removido com sucesso"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Delete error: {str(e)}", exc_info=True)
         raise HTTPException(

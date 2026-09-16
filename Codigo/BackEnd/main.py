@@ -12,11 +12,13 @@ load_dotenv()
 # Cria a aplicação FastAPI
 app = FastAPI()
 
+allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",") if origin.strip()]
+
 # Configuração do middleware CORS (Cross-Origin Resource Sharing)
 # Isso permite que o frontend (mesmo hospedado em outro domínio) acesse a API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite qualquer origem (em produção, defina as origens específicas)
+    allow_origins=allowed_origins,  # Permite origens específicas via variável de ambiente
     allow_credentials=True,
     allow_methods=["*"],  # Permite todos os métodos HTTP (GET, POST, etc.)
     allow_headers=["*"],  # Permite todos os headers

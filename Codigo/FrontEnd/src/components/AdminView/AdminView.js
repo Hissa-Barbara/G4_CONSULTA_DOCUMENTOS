@@ -21,7 +21,8 @@ import './AdminView.css';
 const AdminView = ({
   user,
   setCurrentView,
-  handleLogout
+  handleLogout,
+  API_BASE_URL
 }) => {
   // Estados para controle de upload
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -49,7 +50,7 @@ const AdminView = ({
   const fetchDocuments = async () => {
     setIsLoading(true);
     try {
-      const response = await axios.get("http://localhost:8000/api/admin/documents");
+      const response = await axios.get(`${API_BASE_URL}/api/admin/documents`);
       // Formata os dados recebidos do backend para o formato usado no frontend
       const formattedDocs = response.data.map(doc => ({
         id: doc.id,
@@ -58,7 +59,7 @@ const AdminView = ({
         lastUpdated: new Date(doc.saved_at).toLocaleDateString(),
         isActive: true,
         size: `${(doc.size / (1024 * 1024)).toFixed(1)} MB`,
-        downloadUrl: `http://localhost:8000/api/admin/download/${doc.id}`
+        downloadUrl: `${API_BASE_URL}/api/admin/download/${doc.id}`
       }));
       setDocuments(formattedDocs);
     } catch (error) {
@@ -86,7 +87,7 @@ const AdminView = ({
 
     try {
       const response = await axios.post(
-        "http://localhost:8000/api/admin/upload",
+        `${API_BASE_URL}/api/admin/upload`,
         formData,
         {
           headers: {
@@ -118,11 +119,13 @@ const AdminView = ({
   // Função para selecionar arquivo no input file
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
-    // Valida se o arquivo é PDF
-    if (file && file.type === 'application/pdf') {
+    const allowedExtensions = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'tif', 'tiff'];
+    const extension = file?.name.split('.').pop()?.toLowerCase();
+
+    if (file && allowedExtensions.includes(extension)) {
       setNewDocument(prev => ({ ...prev, file }));
     } else {
-      alert('Por favor, selecione apenas arquivos PDF.');
+      alert('Selecione um arquivo PDF, PNG, JPG, JPEG, WEBP, TIF ou TIFF.');
     }
   };
 
@@ -162,7 +165,7 @@ const AdminView = ({
   const handleRemoveDocument = async (docId) => {
     if (window.confirm('Tem certeza que deseja remover este documento?')) {
       try {
-        await axios.delete(`http://localhost:8000/api/admin/document/${docId}`);
+        await axios.delete(`${API_BASE_URL}/api/admin/document/${docId}`);
         // Remove o documento da lista local após sucesso no backend
         setDocuments(prev => prev.filter(doc => doc.id !== docId));
       } catch (error) {
@@ -192,10 +195,10 @@ const AdminView = ({
   const renderSectionContent = () => {
     switch (activeSection) {
       case 'requests':
-        return <AdminRequestsPanel API_BASE_URL="http://localhost:8000" />;
+        return <AdminRequestsPanel API_BASE_URL={API_BASE_URL} />;
       
       case 'admin-management':
-        return <AdminManagementPanel API_BASE_URL="http://localhost:8000" currentUser={user} />;
+        return <AdminManagementPanel API_BASE_URL={API_BASE_URL} currentUser={user} />;
       
       case 'documents':
       default:
@@ -458,10 +461,10 @@ const AdminView = ({
               
               {/* Input para seleção de arquivo */}
               <div className="form-group">
-                <label className="form-label">Arquivo PDF *</label>
+                <label className="form-label">Documento ou imagem *</label>
                 <input
                   type="file"
-                  accept=".pdf"
+                  accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff"
                   onChange={handleFileSelect}
                   className="file-input"
                   required
