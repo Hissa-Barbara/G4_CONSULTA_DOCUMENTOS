@@ -1,122 +1,223 @@
-# ConsultAI — Consulta inteligente a documentos com LLM e RAG
+# Guia Rápido para Rodar o Projeto (Branch teste)
 
-Sistema de perguntas e respostas em linguagem natural sobre documentos institucionais, com **citação das fontes**. O caso de uso inicial é a **Resolução nº 1892-CONSEPE/2019**, que aprova as Normas Regulamentadoras dos Cursos de Graduação da UFMA, mas o administrador pode enviar outros PDFs.
+Este arquivo explica o passo a passo para baixar, configurar e executar o projeto localmente com Docker.
 
-Software com registro no INPI (BR512025005061-5). Desenvolvido em grupo na disciplina de Projeto de Desenvolvimento de Software (UFMA, 2025.1).
-
-<!-- Adicione aqui um print ou GIF do chat respondendo uma pergunta, com as fontes visíveis -->
-
-## Como funciona
-
-```
-PDF → extração de texto (+ OCR para páginas digitalizadas) → chunks → embeddings → Pinecone
-                                                                                    │
-Pergunta → embedding → busca semântica (top-k) → reordenação → prompt com contexto → LLM (Groq) → resposta + fontes
-```
-
-1. **Ingestão (administrador):** o PDF é lido com PyMuPDF/pdfplumber. Páginas sem texto passam por OCR (Tesseract). O texto é dividido em chunks com LangChain e convertido em embeddings (Sentence Transformers).
-2. **Indexação:** os vetores e os metadados (documento, ordem do chunk) ficam no Pinecone.
-3. **Consulta:** a pergunta vira embedding, o sistema busca os trechos mais próximos, reordena por relevância e monta o contexto dentro de um limite de tamanho.
-4. **Resposta:** o LLM (Groq) responde apenas com base no contexto recuperado, e o sistema devolve as fontes que de fato foram enviadas ao modelo.
-
-## Funcionalidades
-
-- **Chat** com respostas fundamentadas e citação de fontes, com escolha do documento a consultar
-- **Autenticação** por e-mail/senha (JWT) e **login com Google**
-- **Perfis de acesso:** usuário comum e administrador, com fluxo de solicitação para virar admin e painel de gestão de administradores
-- **Gestão de documentos (admin):** upload, download, remoção e sincronização de metadados
-- **Histórico** de consultas por usuário
-- **Avaliação das respostas** com botões de feedback
-
-## Tecnologias
-
-| Camada | Tecnologias |
-|---|---|
-| Backend | Python, FastAPI, Uvicorn/Gunicorn |
-| LLM | Groq API |
-| Busca semântica | Pinecone, Sentence Transformers |
-| Processamento de documentos | PyMuPDF, pdfplumber, pypdf, Tesseract OCR (pytesseract), LangChain Text Splitters |
-| Autenticação | JWT (python-jose), bcrypt, Google OAuth |
-| Frontend | React, Axios, Lucide |
-| Infraestrutura | Docker, Docker Compose, Nginx, PostgreSQL |
-
-## Como executar (Docker)
-
-Pré-requisitos: Docker e Docker Compose, e contas gratuitas na Groq e na Pinecone.
+## 1) Clonar o repositório
 
 ```bash
 git clone https://github.com/Hissa-Barbara/G4_CONSULTA_DOCUMENTOS.git
 cd G4_CONSULTA_DOCUMENTOS
-cp .env.example .env        # no PowerShell: Copy-Item .env.example .env
 ```
 
-Edite o `.env` e preencha, no mínimo:
+## 2) Ir para a branch de teste
 
-| Variável | Para quê |
-|---|---|
-| `GROQ_API_KEY`, `GROQ_MODEL`, `LLM_PROVIDER` | LLM (use `LLM_PROVIDER=groq`) |
-| `PINECONE_API_KEY`, `PINECONE_INDEX_NAME`, `PINECONE_HOST` | Índice vetorial |
-| `EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS` | Modelo de embeddings e a dimensão do índice |
-| `SECRET_KEY` | Chave de assinatura do JWT (use um valor longo e aleatório) |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Apenas se for usar login com Google |
+```bash
+git fetch origin
+git switch teste
+```
+
+Se a branch local ainda não existir:
+
+```bash
+git switch -c teste --track origin/teste
+```
+
+## 3) Criar e configurar o arquivo .env
+
+Copie o arquivo de exemplo:
+
+```bash
+cp .env.example .env
+```
+
+No Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Depois, edite o `.env` e preencha os campos necessários.
+
+### Campos importantes
+
+- `GROQ_API_KEY`: sua chave da Groq
+- `GROQ_MODEL`: modelo a usar (exemplo: qwen/qwen3-32b)
+- `LLM_PROVIDER`: groq para usar Groq primeiro
+- `PINECONE_API_KEY`: chave da Pinecone
+- `PINECONE_INDEX_NAME`: nome do índice
+- `PINECONE_HOST`: host do índice
+- `SECRET_KEY`: chave JWT da aplicação
+- `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET`: se for usar login Google
+
+Observação: os valores de banco no `.env.example` já estão prontos para o Docker Compose local.
+
+## 4) Subir os containers
 
 ```bash
 docker compose up -d --build
-docker compose ps           # backend, frontend e db devem estar "Up"
 ```
+
+## 5) Verificar se subiu tudo
+
+```bash
+docker compose ps
+```
+
+Esperado:
+
+- backend em Up
+- frontend em Up
+- db em Up (healthy)
+
+## 6) Acessar o sistema
 
 - Frontend: http://localhost:10000
-- API (Swagger): http://localhost:8000/docs
-- Logs: `docker compose logs -f backend`
+- Backend (Swagger): http://localhost:8000/docs
 
-Detalhes de cada parte: [Backend](Codigo/BackEnd/README.md) · [Frontend](Codigo/FrontEnd/README.md)
+## 7) Ver logs se algo falhar
 
-> **Segurança:** nunca faça commit do `.env`. Se uma chave for exposta, revogue e gere outra.
-
-## Estrutura do repositório
-
-```
-Codigo/
-├── BackEnd/     API FastAPI (rotas de login, chat, histórico, admin e processamento de documentos)
-└── FrontEnd/    Interface React (chat, histórico e painéis de administração)
-Diagramas/       Casos de uso, atividade, estado, classe e sequência (PlantUML)
-Documentos/      Documentação do projeto
-Gestão/          Material de gestão do projeto (board)
-docker-compose.yml
+```bash
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f db
 ```
 
-## Endpoints principais
+## 8) Atualizar código depois
 
-| Rota | Função |
-|---|---|
-| `POST /chat` | Pergunta ao sistema e recebe resposta com fontes |
-| `POST /login/`, `/login/google`, `/login/register` | Autenticação |
-| `GET/POST /history` | Histórico de consultas |
-| `POST /admin/upload`, `GET /admin/documents`, `DELETE /admin/document/{id}` | Gestão de documentos |
-| `POST /admin-requests/request`, `/admin-requests/requests/{id}/review` | Solicitação e aprovação de perfil admin |
+Quando houver novas alterações no GitHub:
 
-A documentação completa e interativa está no Swagger (`/docs`).
+```bash
+git switch teste
+git pull
+docker compose up -d --build
+```
 
-## Equipe
+## 9) Boas práticas
 
-Euderlan Freire da Silva Abreu, Hissa Bárbara Oliveira, Yasmin Serejo Lima, Anderson Rodrigo Diniz Oliveira e Yuram Almeida Santos.
+- Nunca subir `.env` para o repositório.
+- Rotacionar chaves se alguma credencial for exposta.
+- Fazer commit somente do que é código/config segura.
 
-Orientação: Prof. Dr. Thales Levi Azevedo Valente (UFMA).
+---
 
-### Minha contribuição (Hissa Bárbara)
+# Sistema Inteligente de Consultas via LLM - UFMA
 
-<!-- Ajuste conforme o que você de fato fez; os itens abaixo vêm do histórico de commits -->
+Um sistema de consultas inteligente baseado em LLM (Large Language Model) desenvolvido para facilitar o acesso às informações da RESOLUÇÃO Nº 1892-CONSEPE de 28 de junho de 2019, que aprova as Normas Regulamentadoras dos Cursos de Graduação da Universidade Federal do Maranhão.
 
-- Desenvolvimento full stack (frontend React e backend FastAPI)
-- Correções e melhorias na seleção de documentos e no resumo salvo dos documentos
-- Processamento visual de documentos e melhoria da busca documental
-- Diagramas de sequência, atividade e estado (PlantUML) e documentação do projeto
+## 📋 Descrição do Projeto
 
-## Limitações e próximos passos
+Este sistema oferece uma interface de chat inteligente que permite aos usuários realizarem consultas em linguagem natural sobre o conteúdo da resolução acadêmica da UFMA. Através de processamento de linguagem natural, o sistema interpreta perguntas e retorna respostas precisas com citação das fontes específicas.
 
-- O sistema responde apenas com base nos documentos enviados e não substitui a consulta oficial à universidade.
-- Próximos passos: avaliação automática da qualidade das respostas (usando o feedback dos usuários) e suporte a mais tipos de documento.
+## ✨ Funcionalidades Principais
 
-## Licença
+### 🔐 1. Sistema de Autenticação
+- Login seguro com diferentes níveis de acesso
+- Controle de permissões (usuário comum/administrador)
+- Gestão segura de credenciais
 
-Licença MIT (adicione o arquivo `LICENSE` na raiz do repositório). Projeto acadêmico da Universidade Federal do Maranhão (UFMA).
+### 💬 2. Consultas via LLM
+- Interface de chat intuitiva
+- Processamento de perguntas em linguagem natural
+- Respostas precisas com citação de fontes
+- Foco na RESOLUÇÃO Nº 1892-CONSEPE
+
+### 📚 3. Histórico de Consultas
+- Visualização de perguntas anteriores
+- Histórico personalizado por usuário
+- Facilita continuidade nas pesquisas acadêmicas
+
+### ⚙️ 4. Gestão de Documentos (Administrador)
+- Upload de versões atualizadas da resolução
+- Edição e remoção de documentos
+- Processamento automático de arquivos PDF
+- Acesso restrito a administradores
+
+### ⭐ 5. Sistema de Avaliação
+- Botões de feedback para qualidade das respostas
+- Opção para reportar erros
+- Análise contínua para melhoria do sistema
+
+### 🚪 6. Logout Seguro
+- Encerramento seguro da sessão
+- Limpeza adequada dos dados de autenticação
+- Redirecionamento para tela de login
+
+## 🛠️ Tecnologias Utilizadas
+
+- **Backend:** Python, FastAPI
+- **Frontend:** React
+- **LLM:** Groq (modelo configurável pela variável `GROQ_MODEL`)
+- **Base de Dados:** Pinecone (banco vetorial) e PostgreSQL (via Docker Compose)
+- **Processamento de PDF:** PyMuPDF, pdfplumber, pypdf e Tesseract OCR (pytesseract)
+
+## 🚀 Como Executar
+
+```bash
+# Clone o repositório
+git clone https://github.com/Hissa-Barbara/G4_CONSULTA_DOCUMENTOS.git
+```
+
+- Segue link do Readme BackEnd: [Codigo/BackEnd/README.md](Codigo/BackEnd/README.md)
+- Segue link do Readme FrontEnd: [Codigo/FrontEnd/README.md](Codigo/FrontEnd/README.md)
+
+Para rodar tudo com Docker, siga o **Guia Rápido** no início deste arquivo.
+
+## 📖 Como Usar
+
+1. **Login:** Acesse o sistema com suas credenciais
+2. **Fazer Pergunta:** Digite sua consulta sobre a resolução no chat
+3. **Visualizar Resposta:** Receba a resposta com citação da fonte
+4. **Avaliar:** Use os botões de feedback para avaliar a qualidade
+5. **Histórico:** Acesse suas consultas anteriores quando necessário
+
+## 🎯 Público-Alvo
+
+- Estudantes da UFMA
+- Professores e coordenadores
+- Funcionários administrativos
+- Pesquisadores acadêmicos
+
+## 📄 Documentação
+
+O sistema é baseado na RESOLUÇÃO Nº 1892-CONSEPE de 28 de junho de 2019, que estabelece as Normas Regulamentadoras dos Cursos de Graduação da Universidade Federal do Maranhão.
+
+## 🤝 Contribuindo
+
+Contribuições são bem-vindas! Para contribuir:
+
+1. Faça um fork do repositório
+2. Crie uma branch para a sua alteração (`git checkout -b minha-melhoria`)
+3. Faça o commit das mudanças (`git commit -m "descrição da mudança"`)
+4. Envie a branch (`git push origin minha-melhoria`)
+5. Abra um Pull Request
+
+## 📞 Suporte
+
+Para dúvidas ou suporte técnico, entre em contato através dos canais oficiais da UFMA ou abra uma issue neste repositório.
+
+## 📝 Reconhecimentos e Direitos Autorais
+
+- **@autor:** Euderlan Freire da Silva Abreu, Hissa Bárbara Oliveira, Yasmin Serejo Lima, Anderson Rodrigo Diniz Oliveira, Yuram Almeida Santos
+- **@contato:** abra uma issue neste repositório
+- **@data última versão:** 12 de junho de 2025
+- **@versão:** 1.0
+- **@outros repositórios:** https://github.com/Hissa-Barbara/G4_CONSULTA_DOCUMENTOS
+- **@Agradecimentos:** Universidade Federal do Maranhão (UFMA), Professor Doutor Thales Levi Azevedo Valente, e colegas de curso.
+
+## Copyright/License
+
+Este material é resultado de um trabalho acadêmico para a disciplina PROJETO DE DESENVOLVIMENTO DE SOFTWARE, sob a orientação do professor Dr. THALES LEVI AZEVEDO VALENTE, semestre letivo 2025.1, curso Engenharia da Computação, na Universidade Federal do Maranhão (UFMA).
+
+Todo o material sob esta licença é software livre: pode ser usado para fins acadêmicos e comerciais sem nenhum custo. Não há papelada, nem royalties, nem restrições de "copyleft" do tipo GNU. Ele é licenciado sob os termos da Licença MIT, conforme descrito abaixo, e, portanto, é compatível com a GPL e também se qualifica como software de código aberto. É de domínio público. Os detalhes legais estão abaixo. O espírito desta licença é que você é livre para usar este material para qualquer finalidade, sem nenhum custo. O único requisito é que, se você usá-los, nos dê crédito.
+
+### Licença MIT
+
+Licenciado sob a Licença MIT. Permissão é concedida, gratuitamente, a qualquer pessoa que obtenha uma cópia deste software e dos arquivos de documentação associados (o "Software"), para lidar no Software sem restrição, incluindo sem limitação os direitos de usar, copiar, modificar, mesclar, publicar, distribuir, sublicenciar e/ou vender cópias do Software, e permitir pessoas a quem o Software é fornecido a fazê-lo, sujeito às seguintes condições:
+
+Este aviso de direitos autorais e este aviso de permissão devem ser incluídos em todas as cópias ou partes substanciais do Software.
+
+O SOFTWARE É FORNECIDO "COMO ESTÁ", SEM GARANTIA DE QUALQUER TIPO, EXPRESSA OU IMPLÍCITA, INCLUINDO MAS NÃO SE LIMITANDO ÀS GARANTIAS DE COMERCIALIZAÇÃO, ADEQUAÇÃO A UM DETERMINADO FIM E NÃO INFRINGÊNCIA. EM NENHUM CASO OS AUTORES OU DETENTORES DE DIREITOS AUTORAIS SERÃO RESPONSÁVEIS POR QUALQUER RECLAMAÇÃO, DANOS OU OUTRA RESPONSABILIDADE, SEJA EM AÇÃO DE CONTRATO, TORT OU OUTRA FORMA, DECORRENTE DE, FORA DE OU EM CONEXÃO COM O SOFTWARE OU O USO OU OUTRAS NEGOCIAÇÕES NO SOFTWARE.
+
+Para mais informações sobre a Licença MIT: https://opensource.org/licenses/MIT
+
+Desenvolvido com ❤️ para UFMA
